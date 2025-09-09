@@ -104,3 +104,6 @@ async def analyze_topic(topic: str):
     thread.start()
     
     return {"message": f"Started analysis for topic: '{topic}'. This may take a minute."}
+if __name__ == "__main__":
+import uvicorn
+uvicorn.run(app, host="0.0.0.0", port=8000)
