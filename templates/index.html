@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>MarketMuse AI Dashboard</title>
+    <!-- Bootstrap CSS for responsive styling -->
+    <link
+      href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css"
+      rel="stylesheet"
+    />
+    <!-- Chart.js for visualizations -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+      .sentiment-positive {
+        border-left: 5px solid #28a745 !important;
+      } /* Green */
+      .sentiment-negative {
+        border-left: 5px solid #dc3545 !important;
+      } /* Red */
+      .sentiment-neutral {
+        border-left: 5px solid #6c757d !important;
+      } /* Grey */
+      .card {
+        transition: transform 0.2s;
+        margin-bottom: 1.5rem;
+      }
+      .card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15) !important;
+      }
+      #loadingSpinner {
+        display: none;
+      } /* Hide spinner initially */
+    </style>
+  </head>
+  <body class="bg-light">
+    <!-- Navigation Bar -->
+    <nav class="navbar navbar-expand-lg navbar-dark bg-primary mb-4">
+      <div class="container">
+        <a class="navbar-brand fw-bold" href="/dashboard"> 📈 MarketMuse AI </a>
+        <button
+          class="navbar-toggler"
+          type="button"
+          data-bs-toggle="collapse"
+          data-bs-target="#navbarNav"
+        >
+          <span class="navbar-toggler-icon"></span>
+        </button>
+      </div>
+    </nav>
+
+    <div class="container">
+      <h1 class="text-center mb-4">Market Sentiment Intelligence Dashboard</h1>
+      <p class="text-center text-muted lead mb-5">
+        AI-powered analysis of real-time news sentiment.
+      </p>
+
+      <!-- Search Form -->
+      <div class="row justify-content-center mb-5">
+        <div class="col-md-8">
+          <div class="card">
+            <div class="card-body">
+              <h5 class="card-title">Analyze New Topic</h5>
+              <form id="analyze-form" class="d-flex">
+                <input
+                  type="text"
+                  id="topic-input"
+                  class="form-control me-2"
+                  placeholder="Enter topic (e.g., Tesla, Bitcoin, AI)"
+                  required
+                />
+                <button type="submit" class="btn btn-primary">
+                  <span
+                    id="analyze-spinner"
+                    class="spinner-border spinner-border-sm"
+                    style="display: none"
+                  ></span>
+                  Analyze
+                </button>
+              </form>
+              <div id="analyze-message" class="mt-2"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Loading Spinner -->
+      <div id="loadingSpinner" class="text-center my-5">
+        <div class="spinner-border text-primary" role="status">
+          <span class="visually-hidden">Loading...</span>
+        </div>
+        <p class="mt-2">Fetching latest market intelligence...</p>
+      </div>
+
+      <!-- Stats Cards Row -->
+      <div class="row mb-4" id="stats-cards" style="display: none">
+        <div class="col-md-4">
+          <div class="card text-white bg-success h-100">
+            <div class="card-body text-center">
+              <h5 class="card-title">
+                <i class="bi bi-arrow-up-circle"></i> Positive
+              </h5>
+              <h2 id="positive-count" class="card-text">0</h2>
+            </div>
+          </div>
+        </div>
+        <div class="col-md-4">
+          <div class="card text-white bg-secondary h-100">
+            <div class="card-body text-center">
+              <h5 class="card-title">Neutral</h5>
+              <h2 id="neutral-count" class="card-text">0</h2>
+            </div>
+          </div>
+        </div>
+        <div class="col-md-4">
+          <div class="card text-white bg-danger h-100">
+            <div class="card-body text-center">
+              <h5 class="card-title">
+                <i class="bi bi-arrow-down-circle"></i> Negative
+              </h5>
+              <h2 id="negative-count" class="card-text">0</h2>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Charts Row -->
+      <div class="row mb-4" id="charts-row" style="display: none">
+        <div class="col-lg-6">
+          <div class="card">
+            <div class="card-header bg-transparent">
+              <h5 class="card-title mb-0">Sentiment Distribution</h5>
+            </div>
+            <div class="card-body">
+              <canvas id="sentimentPieChart"></canvas>
+            </div>
+          </div>
+        </div>
+        <div class="col-lg-6">
+          <div class="card">
+            <div class="card-header bg-transparent">
+              <h5 class="card-title mb-0">Confidence Scores</h5>
+            </div>
+            <div class="card-body">
+              <canvas id="confidenceBarChart"></canvas>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Articles Section -->
+      <div class="card">
+        <div class="card-header">
+          <h5 class="card-title mb-0">Latest Analyzed News</h5>
+        </div>
+        <div class="card-body">
+          <div id="articles-container"></div>
+          <div id="no-articles" class="text-center py-4" style="display: none">
+            <p class="text-muted">
+              No analyzed articles found. Run the data pipeline to fetch news.
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+      // Chart reference variables - MUST be declared at the top level
+      let pieChart = null;
+      let barChart = null;
+
+      // Main App Logic
+      async function fetchData() {
+        showLoading(true);
+        try {
+          // Fetch articles and stats in parallel for better performance
+          const [articlesResponse, statsResponse] = await Promise.all([
+            fetch("/articles"),
+            fetch("/stats"),
+          ]);
+
+          if (!articlesResponse.ok || !statsResponse.ok) {
+            throw new Error("Network response was not ok");
+          }
+
+          const articles = await articlesResponse.json();
+          const stats = await statsResponse.json();
+
+          displayStats(stats);
+          displayArticles(articles);
+          createCharts(articles);
+          showLoading(false);
+        } catch (error) {
+          console.error("Error fetching data:", error);
+          showLoading(false);
+          document.getElementById("articles-container").innerHTML = `
+                <div class="alert alert-danger" role="alert">
+                    Could not load data. Make sure the backend server is running.
+                    Error: ${error.message}
+                </div>
+            `;
+        }
+      }
+
+      function displayStats(stats) {
+        document.getElementById("positive-count").textContent =
+          stats.positive_articles;
+        document.getElementById("neutral-count").textContent =
+          stats.neutral_articles;
+        document.getElementById("negative-count").textContent =
+          stats.negative_articles;
+        document.getElementById("stats-cards").style.display = "flex";
+      }
+
+      function displayArticles(articles) {
+        const container = document.getElementById("articles-container");
+        const noArticles = document.getElementById("no-articles");
+
+        if (articles.length === 0) {
+          container.innerHTML = "";
+          noArticles.style.display = "block";
+          return;
+        }
+
+        noArticles.style.display = "none";
+        container.innerHTML = "";
+
+        articles.forEach((article) => {
+          const sentimentClass = `sentiment-${article.sentiment_label.toLowerCase()}`;
+          const sentimentColor = getColor(article.sentiment_label);
+          const confidenceWidth = article.sentiment_score;
+
+          const articleElement = `
+                <div class="card mb-3 ${sentimentClass}">
+                    <div class="card-body">
+                        <h6 class="card-title">${article.title}</h6>
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <span class="badge bg-secondary">${article.source}</span>
+                            <span class="badge" style="background-color: ${sentimentColor}">
+                                ${article.sentiment_label} (${article.sentiment_score}%)
+                            </span>
+                        </div>
+                        <div class="progress" style="height: 5px;">
+                            <div class="progress-bar" style="width: ${confidenceWidth}%; background-color: ${sentimentColor};" 
+                                 role="progressbar" aria-valuenow="${confidenceWidth}" aria-valuemin="0" aria-valuemax="100">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+          container.innerHTML += articleElement;
+        });
+      }
+
+      function createCharts(articles) {
+        document.getElementById("charts-row").style.display = "flex";
+
+        // Destroy existing charts if they exist
+        if (pieChart) {
+          pieChart.destroy();
+        }
+        if (barChart) {
+          barChart.destroy();
+        }
+
+        // Prepare data for Pie Chart (Sentiment Distribution)
+        const sentimentCounts = {
+          POSITIVE: 0,
+          NEUTRAL: 0,
+          NEGATIVE: 0,
+        };
+        articles.forEach((article) => {
+          sentimentCounts[article.sentiment_label]++;
+        });
+
+        // Create new pie chart
+        pieChart = new Chart(document.getElementById("sentimentPieChart"), {
+          type: "pie",
+          data: {
+            labels: ["Positive", "Neutral", "Negative"],
+            datasets: [
+              {
+                data: [
+                  sentimentCounts.POSITIVE,
+                  sentimentCounts.NEUTRAL,
+                  sentimentCounts.NEGATIVE,
+                ],
+                backgroundColor: ["#28a745", "#6c757d", "#dc3545"],
+              },
+            ],
+          },
+          options: { responsive: true, maintainAspectRatio: false },
+        });
+
+        // Prepare data for Bar Chart (Confidence Scores)
+        const confidenceScores = articles.map(
+          (article) => article.sentiment_score
+        );
+
+        // Create new bar chart
+        barChart = new Chart(document.getElementById("confidenceBarChart"), {
+          type: "bar",
+          data: {
+            labels: articles.map((_, index) => `Article ${index + 1}`),
+            datasets: [
+              {
+                label: "Confidence Score (%)",
+                data: confidenceScores,
+                backgroundColor: articles.map((article) =>
+                  getColor(article.sentiment_label)
+                ),
+              },
+            ],
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: { y: { beginAtZero: true, max: 100 } },
+          },
+        });
+      }
+
+      function showLoading(show) {
+        document.getElementById("loadingSpinner").style.display = show
+          ? "block"
+          : "none";
+        document.getElementById("stats-cards").style.display = show
+          ? "none"
+          : "flex";
+        document.getElementById("charts-row").style.display = show
+          ? "none"
+          : "flex";
+
+        // Destroy charts when loading to prevent conflicts
+        if (show) {
+          if (pieChart) {
+            pieChart.destroy();
+            pieChart = null;
+          }
+          if (barChart) {
+            barChart.destroy();
+            barChart = null;
+          }
+        }
+      }
+
+      function getColor(sentiment) {
+        const colors = {
+          POSITIVE: "#28a745",
+          NEGATIVE: "#dc3545",
+          NEUTRAL: "#6c757d",
+        };
+        return colors[sentiment] || "#6c757d";
+      }
+
+      // Add topic analysis functionality
+      document
+        .getElementById("analyze-form")
+        .addEventListener("submit", async function (e) {
+          e.preventDefault();
+          const topicInput = document.getElementById("topic-input");
+          const topic = topicInput.value.trim();
+          const analyzeSpinner = document.getElementById("analyze-spinner");
+          const analyzeMessage = document.getElementById("analyze-message");
+
+          if (!topic) return;
+
+          analyzeSpinner.style.display = "inline-block";
+          analyzeMessage.innerHTML =
+            '<div class="alert alert-info">Starting analysis... This may take a minute.</div>';
+
+          try {
+            const response = await fetch(
+              `/analyze/${encodeURIComponent(topic)}`,
+              {
+                method: "POST",
+              }
+            );
+
+            if (response.ok) {
+              analyzeMessage.innerHTML = `<div class="alert alert-success">Analysis started for: <strong>${topic}</strong>. The dashboard will refresh shortly.</div>`;
+              topicInput.value = "";
+
+              // Refresh dashboard after 10 seconds to show new results
+              setTimeout(fetchData, 10000);
+            } else {
+              throw new Error("Failed to start analysis");
+            }
+          } catch (error) {
+            analyzeMessage.innerHTML =
+              '<div class="alert alert-danger">Error starting analysis. Make sure the backend is running.</div>';
+          } finally {
+            analyzeSpinner.style.display = "none";
+          }
+        });
+
+      // Initialize the dashboard when the page loads
+      document.addEventListener("DOMContentLoaded", fetchData);
+    </script>
+  </body>
+</html>
